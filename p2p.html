@@ -1,0 +1,128 @@
+<html>
+	<head>
+		<script src="http://cdn.peerjs.com/0.3/peer.min.js"></script>
+		<script src="/socket.io/socket.io.js"></script>
+
+		<script type="text/javascript">
+
+		// get user media
+		var my_stream = null;
+
+		// webRTC peer and peer id
+		var peer = null;
+		var peer_id = null;
+
+		// socket server
+		var socket = null;
+
+		var init = function(){
+
+			window.URL = window.URL || window.webkitURL || window.mozURL || window.msURL;
+			navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+
+			if(navigator.getUserMedia){
+				navigator.getUserMedia({video: true, audio: true}, function(stream){
+					my_stream = stream;
+					var videoElement = document.getElementById('myVideo');
+					videoElement.src = window.URL.createObjectURL(stream) || stream;
+					videoElement.play();
+				
+					//connect to peer server
+					peerConnect();
+
+				}, function(err){
+					console.log('Failed to get local stream', err);
+				});
+			}
+		};
+
+		// step one : connect to the peerjs server
+		var peerConnect = function(){
+			// create a new PeerJS object
+			peer = new Peer({key: 'bw8m5kivpn5klnmi'});
+
+			// Get an ID from the PeerJS server
+			peer.on('open', function(id){
+				console.log('My peer ID is: ' + id);
+				peer_id = id;
+				//connect to socket server (see function below)
+				connectSocket();
+		});
+
+		// step two : connects to the socket server
+		var connectSocket = function(){
+
+			socket = io.connect('/');
+
+			socket.on('connect', function(){
+				console.log("sending out my peer id");
+				socket.emit("peer_id", peer_id);
+			});
+
+			// Receive other peer ids
+			socket.on('peer_id_server', function (data){
+				console.log("Got a new peer from server: " + data);
+
+				// call them with our stream
+				console.log("Calling peer: " + data);
+				var call = peer.call(data, my_stream);
+
+				call.on('stream', function(remoteStream){
+					console.log("Got remote stream!");
+					var ovideoElement = document.createElement('video');
+					ovideoElement.src = window.URL.createObjectURL(remoteStream) || remoteStream;
+					ovideoElement.id = data;
+					ovideoElement.play();
+					document.body.appendChild(ovideoElement);
+				});
+			});
+
+			//remove video of the user who left
+			socket.on('removeUser', function(data){
+			console.log("removing video with ID" + data);
+			var theVideo =document.getElementById(data);
+			theVideo.parentNode.removeChild(theVideo);
+
+			});			
+		};
+
+			// on receiving a call ... 
+			peer.on('call', function(incoming_call) {
+				console.log("You got a new call");
+
+				// answer the call with an AV stream
+				incoming_call.answer(my_stream);
+
+				// when you receive a stream from an incoming call, place it in a video div
+				incoming_call.on('stream', function(remoteStream){
+					console.log("Incoming stream ...")
+					var ovideoElement = document.createElement('video');
+					ovideoElement.src = window.URL.createObjectURL(remoteStream) || remoteStream;
+					ovideoElement.play();
+					document.getElementById("allVideos").appendChild(ovideoElement);		
+
+				});
+			});
+		};
+
+		
+
+		window.addEventListener('load', init);
+
+		</script>
+	</head>
+	<body>
+	<button onclick="tryp2p()"> JOIN </button>
+	<p>my video </p>
+		<video id="myVideo" width="320" height="240"></video>
+
+		<div id="div1"> 
+			<!-- making this to let 6th person know it's not in the game -->
+			<p id="p1"> This is a makeup party! </p>
+			<!-- here will append next text -->
+		</div>
+		<div id='allVideos'>
+		<p>other videos</p>
+		</div>
+	</body>
+</html>
